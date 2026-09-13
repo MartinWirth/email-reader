@@ -1,5 +1,6 @@
 import email
 import imaplib
+import re
 from email.header import decode_header
 from email.message import Message
 from email.utils import parsedate_to_datetime
@@ -102,21 +103,36 @@ class Mailbox:
         finally:
             client.logout()
 
-    def _parse(self, uid: bytes, raw: bytes, include_body=False):
+    def _parse(self, uid: bytes, raw: bytes, include_body=False, size=None):
         msg = email.message_from_bytes(raw)
         date = ""
         try:
             date = parsedate_to_datetime(msg.get("Date", "")).isoformat()
         except (TypeError, ValueError, OverflowError):
             date = msg.get("Date", "")
+
+        participants = []
+        for header in ("From", "To", "Cc"):
+            value = _decode(msg.get(header))
+            if value and value not in participants:
+                participants.append(value)
+
+        attachments = [
+            {"filename": _decode(p.get_filename()), "content_type": p.get_content_type()}
+            for p in msg.walk()
+            if p.get_content_disposition() == "attachment"
+        ]
+
         result = {
             "uid": uid.decode(),
             "subject": _decode(msg.get("Subject")),
             "from": _decode(msg.get("From")),
             "to": _decode(msg.get("To")),
+            "involved": ", ".join(participants),
             "date": date,
             "message_id": msg.get("Message-ID", ""),
-            "attachments": [{"filename": _decode(p.get_filename()), "content_type": p.get_content_type()} for p in msg.walk() if p.get_content_disposition() == "attachment"],
+            "size": size,
+            "attachments": attachments,
         }
         if include_body:
             result["body"] = _body(msg)
@@ -132,10 +148,19 @@ class Mailbox:
             uids = data[0].split()[-limit:][::-1]
             messages = []
             for uid in uids:
-                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[HEADER])")
+                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[HEADER] RFC822.SIZE)")
                 if status == "OK":
-                    raw = b"".join(x[1] for x in fetched if isinstance(x, tuple))
-                    messages.append(self._parse(uid, raw))
+                    raw_parts = []
+                    size = None
+                    for item in fetched:
+                        if isinstance(item, tuple):
+                            raw_parts.append(item[1])
+                        elif isinstance(item, bytes):
+                            match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
+                            if match:
+                                size = int(match.group(1))
+                    raw = b"".join(raw_parts)
+                    messages.append(self._parse(uid, raw, size=size))
             return messages
         finally:
             client.logout()
@@ -143,10 +168,19 @@ class Mailbox:
     def get_message(self, uid: str, folder=None):
         client = self._connect(folder)
         try:
-            status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[])")
+            status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[] RFC822.SIZE)")
             if status != "OK":
                 return None
-            raw = b"".join(x[1] for x in fetched if isinstance(x, tuple))
-            return self._parse(uid.encode(), raw, include_body=True)
+            raw_parts = []
+            size = None
+            for item in fetched:
+                if isinstance(item, tuple):
+                    raw_parts.append(item[1])
+                elif isinstance(item, bytes):
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
+                    if match:
+                        size = int(match.group(1))
+            raw = b"".join(raw_parts)
+            return self._parse(uid.encode(), raw, include_body=True, size=size)
         finally:
             client.logout()
