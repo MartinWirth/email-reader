@@ -27,6 +27,11 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/api/folders")
+def folders():
+    return mailbox().list_folders()
+
+
 @app.get("/api/emails")
 def emails(limit: int = Query(25, ge=1, le=100)):
     return mailbox().list_messages(limit=limit)
