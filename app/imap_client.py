@@ -107,7 +107,8 @@ class Mailbox:
         msg = email.message_from_bytes(raw)
         date = ""
         try:
-            date = parsedate_to_datetime(msg.get("Date", "")).isoformat()
+            dt = parsedate_to_datetime(msg.get("Date", ""))
+            date = dt.strftime("%Y-%m-%d %H:%M")
         except (TypeError, ValueError, OverflowError):
             date = msg.get("Date", "")
 
