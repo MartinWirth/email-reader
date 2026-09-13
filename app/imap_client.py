@@ -1,3 +1,4 @@
+import base64
 import email
 import imaplib
 import re
@@ -23,33 +24,54 @@ def _decode(value: str | None) -> str:
 
 
 def _decode_mailbox_name(value: str) -> str:
-    """Decode IMAP modified UTF-7, including malformed unterminated sequences."""
+    """Decode IMAP modified UTF-7 mailbox names, including common malformed output."""
+    result = []
+    pos = 0
+    while pos < len(value):
+        amp = value.find("&", pos)
+        if amp < 0:
+            result.append(value[pos:])
+            break
+        result.append(value[pos:amp])
+        end = value.find("-", amp + 1)
+        if end >= 0:
+            encoded = value[amp + 1:end]
+            if not encoded:
+                result.append("&")
+            else:
+                result.append(_decode_utf7_segment(encoded, value[amp:end + 1]))
+            pos = end + 1
+            continue
+
+        # Some servers have been observed to omit the terminating '-' for a
+        # single UTF-16BE code unit, e.g. Entw&APwrfe -> Entwü rfe.
+        remainder = value[amp + 1:]
+        repaired = False
+        if len(remainder) >= 3:
+            encoded = remainder[:3]
+            try:
+                raw = base64.b64decode(encoded + "=", altchars=b",+")
+                text = raw.decode("utf-16-be")
+                if len(text) == 1 and ord(text) > 127:
+                    result.append(text)
+                    pos = amp + 4
+                    repaired = True
+            except (ValueError, UnicodeDecodeError):
+                pass
+        if not repaired:
+            result.append(value[amp:])
+            break
+    return "".join(result)
+
+
+def _decode_utf7_segment(encoded: str, original: str) -> str:
     try:
-        decoded = imaplib.IMAP4._decode_utf7(value)
-    except (AttributeError, UnicodeError, ValueError):
-        decoded = value
-
-    if "&" not in decoded:
-        return decoded
-
-    # Some IMAP servers omit the terminating '-' in modified UTF-7 sequences,
-    # e.g. "Entw&APwrfe" instead of "Entw&APw-rfe". Decode the valid UTF-16BE
-    # code units and preserve the following ASCII mailbox name characters.
-    def repair(match):
-        encoded = match.group(1)
-        try:
-            padded = encoded + "=" * (-len(encoded) % 4)
-            raw = __import__("base64").b64decode(padded, altchars=b",+")
-            if len(raw) % 2:
-                return match.group(0)
-            text = raw.decode("utf-16-be")
-            if len(text) == 1:
-                return text
-        except (ValueError, UnicodeDecodeError):
-            pass
-        return match.group(0)
-
-    return re.sub(r"&([A-Za-z0-9+,]+)", repair, decoded)
+        encoded = encoded.replace(",", "/").replace("+", "/")
+        padded = encoded + "=" * (-len(encoded) % 4)
+        raw = base64.b64decode(padded, validate=True)
+        return raw.decode("utf-16-be")
+    except (ValueError, UnicodeDecodeError):
+        return original
 
 
 def _body(msg: Message) -> str:
