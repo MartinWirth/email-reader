@@ -33,18 +33,18 @@ def folders():
 
 
 @app.get("/api/emails")
-def emails(limit: int = Query(25, ge=1, le=100)):
-    return mailbox().list_messages(limit=limit)
+def emails(folder: str | None = Query(None), limit: int = Query(25, ge=1, le=100)):
+    return mailbox().list_messages(limit=limit, folder=folder)
 
 
 @app.get("/api/emails/search")
-def search(q: str = Query(..., min_length=1), limit: int = Query(25, ge=1, le=100)):
-    return mailbox().list_messages(limit=limit, search=q)
+def search(q: str = Query(..., min_length=1), folder: str | None = Query(None), limit: int = Query(25, ge=1, le=100)):
+    return mailbox().list_messages(limit=limit, search=q, folder=folder)
 
 
 @app.get("/api/emails/{uid}")
-def email_detail(uid: str):
-    result = mailbox().get_message(uid)
+def email_detail(uid: str, folder: str | None = Query(None)):
+    result = mailbox().get_message(uid, folder=folder)
     if result is None:
         raise HTTPException(404, "Email not found")
     return result
