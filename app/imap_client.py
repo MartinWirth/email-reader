@@ -108,7 +108,7 @@ class Mailbox:
         date = ""
         try:
             dt = parsedate_to_datetime(msg.get("Date", ""))
-            date = dt.isoformat(timespec="minutes")
+            date = dt.strftime("%Y-%m-%d %H:%M")
         except (TypeError, ValueError, OverflowError):
             date = msg.get("Date", "")
 
