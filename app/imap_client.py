@@ -23,10 +23,33 @@ def _decode(value: str | None) -> str:
 
 
 def _decode_mailbox_name(value: str) -> str:
+    """Decode IMAP modified UTF-7, including malformed unterminated sequences."""
     try:
-        return imaplib.IMAP4._decode_utf7(value)
-    except (AttributeError, UnicodeError):
-        return value
+        decoded = imaplib.IMAP4._decode_utf7(value)
+    except (AttributeError, UnicodeError, ValueError):
+        decoded = value
+
+    if "&" not in decoded:
+        return decoded
+
+    # Some IMAP servers omit the terminating '-' in modified UTF-7 sequences,
+    # e.g. "Entw&APwrfe" instead of "Entw&APw-rfe". Decode the valid UTF-16BE
+    # code units and preserve the following ASCII mailbox name characters.
+    def repair(match):
+        encoded = match.group(1)
+        try:
+            padded = encoded + "=" * (-len(encoded) % 4)
+            raw = __import__("base64").b64decode(padded, altchars=b",+")
+            if len(raw) % 2:
+                return match.group(0)
+            text = raw.decode("utf-16-be")
+            if len(text) == 1:
+                return text
+        except (ValueError, UnicodeDecodeError):
+            pass
+        return match.group(0)
+
+    return re.sub(r"&([A-Za-z0-9+,]+)", repair, decoded)
 
 
 def _body(msg: Message) -> str:
