@@ -21,6 +21,14 @@ def _decode(value: str | None) -> str:
     return "".join(out)
 
 
+def _decode_mailbox_name(value: str) -> str:
+    """Decode an IMAP LIST mailbox name, including modified UTF-7."""
+    try:
+        return imaplib.IMAP4._decode_utf7(value)
+    except (AttributeError, UnicodeError):
+        return value
+
+
 def _body(msg: Message) -> str:
     plain, html = "", ""
     if msg.is_multipart():
@@ -56,14 +64,47 @@ class Mailbox:
         self.folder = os.getenv("IMAP_FOLDER", "INBOX")
         self.timeout = int(os.getenv("IMAP_TIMEOUT", "15"))
 
-    def _connect(self):
+    def _connect(self, select_folder=True):
         client = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
         client.login(self.username, self.password)
-        status, _ = client.select(self.folder, readonly=True)
-        if status != "OK":
-            client.logout()
-            raise RuntimeError(f"Could not select mailbox: {self.folder}")
+        if select_folder:
+            status, _ = client.select(self.folder, readonly=True)
+            if status != "OK":
+                client.logout()
+                raise RuntimeError(f"Could not select mailbox: {self.folder}")
         return client
+
+    def list_folders(self):
+        client = self._connect(select_folder=False)
+        try:
+            status, data = client.list()
+            if status != "OK":
+                raise RuntimeError("Could not list mailboxes")
+
+            folders = []
+            for item in data:
+                if not item:
+                    continue
+                line = item.decode("utf-8", errors="replace")
+                # IMAP LIST format: (flags) "delimiter" "mailbox"
+                # Use the final quoted/unquoted token as the mailbox name.
+                try:
+                    prefix, raw_name = line.rsplit(" ", 1)
+                    raw_name = raw_name.strip('"')
+                    flags_text = prefix.split(" ", 1)[0].strip("()")
+                    flags = [flag for flag in flags_text.split() if flag]
+                    delimiter = prefix.rsplit(" ", 1)[-1].strip('"')
+                    folders.append({
+                        "name": _decode_mailbox_name(raw_name),
+                        "flags": flags,
+                        "delimiter": delimiter,
+                    })
+                except ValueError:
+                    folders.append({"name": _decode_mailbox_name(line), "flags": [], "delimiter": "/"})
+
+            return folders
+        finally:
+            client.logout()
 
     def _parse(self, uid: bytes, raw: bytes, include_body=False):
         msg = email.message_from_bytes(raw)
