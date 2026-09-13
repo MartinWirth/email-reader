@@ -43,10 +43,9 @@ def _decode_mailbox_name(value: str) -> str:
             pos = end + 1
             continue
 
-        # Some servers have been observed to omit the terminating '-' for a
-        # single UTF-16BE code unit, e.g. Entw&APwrfe -> Entwü rfe.
+        # Some servers omit the terminating '-' for a single UTF-16BE code
+        # unit, e.g. Entw&APwrfe instead of Entw&APw-rfe.
         remainder = value[amp + 1:]
-        repaired = False
         if len(remainder) >= 3:
             encoded = remainder[:3]
             try:
@@ -54,19 +53,18 @@ def _decode_mailbox_name(value: str) -> str:
                 text = raw.decode("utf-16-be")
                 if len(text) == 1 and ord(text) > 127:
                     result.append(text)
-                    pos = amp + 4
-                    repaired = True
+                    result.append(remainder[3:])
+                    break
             except (ValueError, UnicodeDecodeError):
                 pass
-        if not repaired:
-            result.append(value[amp:])
-            break
+        result.append(value[amp:])
+        break
     return "".join(result)
 
 
 def _decode_utf7_segment(encoded: str, original: str) -> str:
     try:
-        encoded = encoded.replace(",", "/").replace("+", "/")
+        encoded = encoded.replace(",", "/")
         padded = encoded + "=" * (-len(encoded) % 4)
         raw = base64.b64decode(padded, validate=True)
         return raw.decode("utf-16-be")
