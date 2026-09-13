@@ -22,7 +22,6 @@ def _decode(value: str | None) -> str:
 
 
 def _decode_mailbox_name(value: str) -> str:
-    """Decode an IMAP LIST mailbox name, including modified UTF-7."""
     try:
         return imaplib.IMAP4._decode_utf7(value)
     except (AttributeError, UnicodeError):
@@ -64,44 +63,41 @@ class Mailbox:
         self.folder = os.getenv("IMAP_FOLDER", "INBOX")
         self.timeout = int(os.getenv("IMAP_TIMEOUT", "15"))
 
-    def _connect(self, select_folder=True):
+    def _connect(self, folder=None):
         client = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
         client.login(self.username, self.password)
-        if select_folder:
-            status, _ = client.select(self.folder, readonly=True)
-            if status != "OK":
-                client.logout()
-                raise RuntimeError(f"Could not select mailbox: {self.folder}")
+        selected = folder or self.folder
+        status, _ = client.select(selected, readonly=True)
+        if status != "OK":
+            client.logout()
+            raise RuntimeError(f"Could not select mailbox: {selected}")
+        return client
+
+    def _connect_unselected(self):
+        client = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
+        client.login(self.username, self.password)
         return client
 
     def list_folders(self):
-        client = self._connect(select_folder=False)
+        client = self._connect_unselected()
         try:
             status, data = client.list()
             if status != "OK":
                 raise RuntimeError("Could not list mailboxes")
-
             folders = []
             for item in data:
                 if not item:
                     continue
                 line = item.decode("utf-8", errors="replace")
-                # IMAP LIST format: (flags) "delimiter" "mailbox"
-                # Use the final quoted/unquoted token as the mailbox name.
                 try:
                     prefix, raw_name = line.rsplit(" ", 1)
                     raw_name = raw_name.strip('"')
                     flags_text = prefix.split(" ", 1)[0].strip("()")
                     flags = [flag for flag in flags_text.split() if flag]
                     delimiter = prefix.rsplit(" ", 1)[-1].strip('"')
-                    folders.append({
-                        "name": _decode_mailbox_name(raw_name),
-                        "flags": flags,
-                        "delimiter": delimiter,
-                    })
+                    folders.append({"name": _decode_mailbox_name(raw_name), "flags": flags, "delimiter": delimiter})
                 except ValueError:
                     folders.append({"name": _decode_mailbox_name(line), "flags": [], "delimiter": "/"})
-
             return folders
         finally:
             client.logout()
@@ -120,18 +116,14 @@ class Mailbox:
             "to": _decode(msg.get("To")),
             "date": date,
             "message_id": msg.get("Message-ID", ""),
-            "attachments": [
-                {"filename": _decode(p.get_filename()), "content_type": p.get_content_type()}
-                for p in msg.walk()
-                if p.get_content_disposition() == "attachment"
-            ],
+            "attachments": [{"filename": _decode(p.get_filename()), "content_type": p.get_content_type()} for p in msg.walk() if p.get_content_disposition() == "attachment"],
         }
         if include_body:
             result["body"] = _body(msg)
         return result
 
-    def list_messages(self, limit=25, search=None):
-        client = self._connect()
+    def list_messages(self, limit=25, search=None, folder=None):
+        client = self._connect(folder)
         try:
             criteria = f'(TEXT "{search.replace(chr(34), "")}")' if search else "ALL"
             status, data = client.uid("search", None, criteria)
@@ -148,8 +140,8 @@ class Mailbox:
         finally:
             client.logout()
 
-    def get_message(self, uid: str):
-        client = self._connect()
+    def get_message(self, uid: str, folder=None):
+        client = self._connect(folder)
         try:
             status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[])")
             if status != "OK":
