@@ -10,6 +10,8 @@ A small, self-hosted email reader built with Python and FastAPI. It connects to 
 - Message detail view
 - Plain-text extraction from HTML messages
 - Attachment metadata
+- Total email size including attachments
+- Sortable and resizable email-list columns
 - Environment-based configuration
 - No mailbox data persisted by the application
 
@@ -17,6 +19,7 @@ A small, self-hosted email reader built with Python and FastAPI. It connects to 
 
 - Python 3.11+
 - An IMAP-enabled mailbox
+- VS Code with the Python and Python Debugger extensions (optional, for debugging)
 
 ## Quick start
 
@@ -31,6 +34,25 @@ uvicorn app.main:app --reload
 ```
 
 Open http://127.0.0.1:8000.
+
+## Debugging with VS Code
+
+The repository contains a VS Code debug configuration in `.vscode/launch.json`.
+
+1. Open the repository in VS Code.
+2. Make sure the virtual environment is selected as the Python interpreter.
+3. Set a breakpoint in `app/main.py` or `app/imap_client.py`.
+4. Open **Run and Debug** and select **Debug FastAPI**.
+5. Start the debugger with **F5**.
+6. Open http://127.0.0.1:8000 in your browser.
+
+The debug configuration starts Uvicorn as a Python module:
+
+```text
+python -m uvicorn app.main:app
+```
+
+It deliberately does **not** use `--reload`, because the reload process can make debugger breakpoints harder to follow. Stop the debugger and start it again after code changes.
 
 ## Configuration
 
