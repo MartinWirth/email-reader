@@ -35,6 +35,16 @@ uvicorn app.main:app --reload
 
 Open http://127.0.0.1:8000.
 
+## Development workflow
+
+Before starting or restarting the application, pull the latest changes from GitHub:
+
+```bash
+git pull
+```
+
+After pulling, start or restart the FastAPI debugger so the running application uses the latest code.
+
 ## Debugging with VS Code
 
 The repository contains a VS Code debug configuration in `.vscode/launch.json`.
