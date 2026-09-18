@@ -164,11 +164,17 @@ class Mailbox:
         attachments = []
         for part in msg.walk():
             if part.get_content_disposition() == "attachment":
-                payload = part.get_payload(decode=True)
+                payload = part.get_payload(decode=False)
+                if isinstance(payload, str):
+                    raw_size = len(payload.encode("ascii", errors="replace"))
+                elif isinstance(payload, bytes):
+                    raw_size = len(payload)
+                else:
+                    raw_size = 0
                 attachments.append({
                     "filename": _decode(part.get_filename()),
                     "content_type": part.get_content_type(),
-                    "size": len(payload) if payload else 0,
+                    "size": raw_size,
                 })
 
         result = {
