@@ -202,7 +202,7 @@ class Mailbox:
             uids = data[0].split()[-limit:][::-1]
             messages = []
             for uid in uids:
-                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[HEADER] RFC822.SIZE)")
+                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[] RFC822.SIZE)")
                 if status == "OK":
                     raw_parts = []
                     size = None
