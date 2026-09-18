@@ -209,6 +209,9 @@ class Mailbox:
                     for item in fetched:
                         if isinstance(item, tuple):
                             raw_parts.append(item[1])
+                            match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
+                            if match:
+                                size = int(match.group(1))
                         elif isinstance(item, bytes):
                             match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
                             if match:
@@ -230,6 +233,9 @@ class Mailbox:
             for item in fetched:
                 if isinstance(item, tuple):
                     raw_parts.append(item[1])
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
+                    if match:
+                        size = int(match.group(1))
                 elif isinstance(item, bytes):
                     match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
                     if match:

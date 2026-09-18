@@ -33,6 +33,14 @@ copy .env.example .env  # Windows
 uvicorn app.main:app --reload
 ```
 
+## Restart
+
+```bash
+# Windows: .venv\\Scripts\\activate
+# macOS/Linux: source .venv/bin/activate
+uvicorn app.main:app --reload
+```
+
 Open http://127.0.0.1:8000.
 
 ## Development workflow
