@@ -98,6 +98,11 @@ def _body(msg: Message) -> str:
     return BeautifulSoup(unescape(html), "html.parser").get_text("\n", strip=True)
 
 
+def _attachment_count_from_bodystructure(bodystructure: bytes) -> int:
+    """Count attachment body parts from an IMAP BODYSTRUCTURE response."""
+    return len(re.findall(rb'\("ATTACHMENT"(?:\s|\))', bodystructure, re.IGNORECASE))
+
+
 class Mailbox:
     def __init__(self):
         self.host = os.environ["IMAP_HOST"]
@@ -202,22 +207,27 @@ class Mailbox:
             uids = data[0].split()[-limit:][::-1]
             messages = []
             for uid in uids:
-                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[] RFC822.SIZE)")
+                status, fetched = client.uid("fetch", uid, "(BODY.PEEK[HEADER] RFC822.SIZE BODYSTRUCTURE)")
                 if status == "OK":
                     raw_parts = []
                     size = None
+                    attachment_count = 0
                     for item in fetched:
                         if isinstance(item, tuple):
                             raw_parts.append(item[1])
                             match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
                             if match:
                                 size = int(match.group(1))
+                            attachment_count = _attachment_count_from_bodystructure(item[0])
                         elif isinstance(item, bytes):
                             match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
                             if match:
                                 size = int(match.group(1))
+                            attachment_count = max(attachment_count, _attachment_count_from_bodystructure(item))
                     raw = b"".join(raw_parts)
-                    messages.append(self._parse(uid, raw, size=size))
+                    message = self._parse(uid, raw, size=size)
+                    message["attachment_count"] = attachment_count
+                    messages.append(message)
             return messages
         finally:
             client.logout()
