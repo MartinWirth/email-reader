@@ -161,11 +161,15 @@ class Mailbox:
             if value and value not in participants:
                 participants.append(value)
 
-        attachments = [
-            {"filename": _decode(p.get_filename()), "content_type": p.get_content_type()}
-            for p in msg.walk()
-            if p.get_content_disposition() == "attachment"
-        ]
+        attachments = []
+        for part in msg.walk():
+            if part.get_content_disposition() == "attachment":
+                payload = part.get_payload(decode=True)
+                attachments.append({
+                    "filename": _decode(part.get_filename()),
+                    "content_type": part.get_content_type(),
+                    "size": len(payload) if payload else 0,
+                })
 
         result = {
             "uid": uid.decode(),
