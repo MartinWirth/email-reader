@@ -7,7 +7,7 @@ from email.message import Message
 from email.utils import parsedate_to_datetime
 from html import unescape
 import os
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, NavigableString
 
 
 def _decode(value: str | None) -> str:
@@ -72,6 +72,32 @@ def _decode_utf7_segment(encoded: str, original: str) -> str:
         return original
 
 
+def _html_body_with_lists(html: str) -> str:
+    """Extract text while preserving HTML ordered and unordered lists."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tag in soup(["script", "style", "head"]):
+        tag.decompose()
+    for item in soup.find_all("li"):
+        parent = item.find_parent(["ol", "ul"])
+        depth = len(item.find_parents("li"))
+        if parent and parent.name == "ol":
+            siblings = parent.find_all("li", recursive=False)
+            try:
+                start = int(parent.get("start", 1))
+            except (ValueError, TypeError):
+                start = 1
+            marker = f"{start + siblings.index(item)}. "
+        else:
+            marker = "• "
+        item.insert(0, NavigableString("  " * depth + marker))
+    for tag in soup.find_all(["li", "p", "div", "br", "ul", "ol"]):
+        if tag.name == "br":
+            tag.replace_with(NavigableString("\n"))
+        else:
+            tag.append(NavigableString("\n"))
+    return "\n".join(line.rstrip() for line in soup.get_text().splitlines() if line.strip()).strip()
+
+
 def _body(msg: Message) -> str:
     plain, html = "", ""
     if msg.is_multipart():
@@ -93,9 +119,11 @@ def _body(msg: Message) -> str:
             text = payload.decode(msg.get_content_charset() or "utf-8", errors="replace")
             plain = text if msg.get_content_type() == "text/plain" else ""
             html = text if msg.get_content_type() == "text/html" else ""
+    if html and BeautifulSoup(html, "html.parser").find(["ul", "ol"]):
+        return _html_body_with_lists(html)
     if plain.strip():
         return plain.strip()
-    return BeautifulSoup(unescape(html), "html.parser").get_text("\n", strip=True)
+    return _html_body_with_lists(html)
 
 
 def _attachment_count_from_bodystructure(bodystructure: bytes) -> int:
