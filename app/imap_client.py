@@ -261,21 +261,47 @@ class Mailbox:
             client.logout()
 
     def move_to_trash(self, uids: list[str], folder: str | None = None):
-        """Move selected UIDs to the server's Trash folder without expunging other mail."""
+        """Move messages to the IMAP Trash mailbox without permanent deletion."""
         if not uids or any(not re.fullmatch(r"[1-9][0-9]*", uid) for uid in uids):
-            raise ValueError("Provide valid message UIDs")
+            raise ValueError("Invalid message UIDs")
         client = self._connect_unselected()
         try:
-            status, data = client.list()
+            status, folders = client.list()
             if status != "OK":
-                raise RuntimeError("Could not discover Trash folder")
+                raise RuntimeError("Could not list IMAP folders")
             trash = None
             fallback = None
-            for item in data:
-                if not item:
+            for entry in folders:
+                if not entry:
                     continue
-                line = item.decode("utf-8", errors="replace")
-                match = re.match(r'^\\(([^)]*)\\)\\s+(?:"[^"]*"|\\S+)\\s+(.+)
+                line = entry.decode("utf-8", errors="replace")
+                match = re.match(r'\(([^)]*)\)\s+(?:"[^"]*"|\S+)\s+(.+)$', line)
+                if not match:
+                    continue
+                flags, raw_name = match.groups()
+                name = _decode_mailbox_name(raw_name.strip('"'))
+                if "\\Trash" in flags.split():
+                    trash = raw_name
+                    break
+                if name.casefold().split("/")[-1] in ("trash", "deleted items", "deleted messages", "papierkorb"):
+                    fallback = raw_name
+            trash = trash or fallback
+            if trash is None:
+                raise ValueError("No Trash folder found")
+            source = folder or self.folder
+            if _decode_mailbox_name(trash.strip('"')).casefold() == source.casefold():
+                raise ValueError("Messages are already in Trash")
+            status, _ = client.select(source, readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select source folder")
+            status, _ = client.uid("MOVE", ",".join(uids), trash)
+            if status != "OK":
+                raise RuntimeError("IMAP MOVE to Trash failed")
+            return {"moved": len(uids), "trash_folder": _decode_mailbox_name(trash.strip('"'))}
+        finally:
+            client.logout()
+
+    def get_message(self, uid: str, folder=None):
         client = self._connect(folder)
         try:
             status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[] RFC822.SIZE)")
