@@ -133,8 +133,7 @@ async function updateContentForSelection(){
     return '<div class="involved-group"><div class="involved-line collapse-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(groupKey)+'" aria-expanded="true" aria-label="Toggle sender group"></button><label><input type="checkbox" data-group-id="'+groupId+'">'+total+' — '+esc(sender)+'</label></div><div class="collapse-panel" data-panel-key="'+esc(groupKey)+'">'+subjectHtml+'</div></div>';
   }).join('');
   const controls=['group','subject','list'].map(type=>
-    '<span class="bulk-collapse"><button type="button" data-collapse-all="'+type+'" data-collapse-action="collapse">Collapse all '+(type==='group'?'groups':type==='subject'?'subgroups':'lists')+'</button> '+
-    '<button type="button" data-collapse-all="'+type+'" data-collapse-action="expand">Expand all '+(type==='group'?'groups':type==='subject'?'subgroups':'lists')+'</button></span>'
+    '<button type="button" data-collapse-all="'+type+'"></button>'
   ).join('');
   content.innerHTML='<div class="content-summary"><div class="summary-heading">'+esc(selectedFolder)+' — '+selected.length+' messages selected — '+groups.size+' different FROM values</div><div class="collapse-all-controls">'+controls+'</div>'+groupHtml+'</div>';
   function setState(box,uids){
@@ -154,26 +153,38 @@ async function updateContentForSelection(){
       box.addEventListener('change',()=>toggleGroup(uids));
     });
   }
-  content.querySelectorAll('[data-collapse-key]').forEach(button=>{
-    const key=button.dataset.collapseKey;
-    const panel=[...content.querySelectorAll('[data-panel-key]')].find(node=>node.dataset.panelKey===key);
-    if(!panel)return;
-    function update(){const expanded=!collapsedPanels.has(key);button.setAttribute('aria-expanded',String(expanded));panel.hidden=!expanded;}
-    update();
-    button.addEventListener('click',()=>{if(collapsedPanels.has(key))collapsedPanels.delete(key);else collapsedPanels.add(key);update();});
-  });
-  content.querySelectorAll('[data-collapse-all]').forEach(button=>button.addEventListener('click',()=>{
-    const prefix=button.dataset.collapseAll+':';
-    const collapse=button.dataset.collapseAction==='collapse';
-    content.querySelectorAll('[data-collapse-key]').forEach(toggle=>{
-      const key=toggle.dataset.collapseKey;
-      if(!key.startsWith(prefix))return;
-      if(collapse)collapsedPanels.add(key);else collapsedPanels.delete(key);
-      toggle.setAttribute('aria-expanded',String(!collapse));
+  function refreshCollapseControls(){
+    content.querySelectorAll('[data-collapse-key]').forEach(button=>{
+      const key=button.dataset.collapseKey;
       const panel=[...content.querySelectorAll('[data-panel-key]')].find(node=>node.dataset.panelKey===key);
-      if(panel)panel.hidden=collapse;
+      const expanded=!collapsedPanels.has(key);
+      button.setAttribute('aria-expanded',String(expanded));
+      if(panel)panel.hidden=!expanded;
     });
+    content.querySelectorAll('[data-collapse-all]').forEach(button=>{
+      const type=button.dataset.collapseAll;
+      const keys=[...content.querySelectorAll('[data-collapse-key]')]
+        .map(node=>node.dataset.collapseKey).filter(key=>key.startsWith(type+':'));
+      const allCollapsed=keys.length>0&&keys.every(key=>collapsedPanels.has(key));
+      const label=type==='group'?'groups':type==='subject'?'subgroups':'lists';
+      button.textContent=(allCollapsed?'Expand':'Collapse')+' all '+label;
+      button.setAttribute('aria-label',button.textContent);
+    });
+  }
+  content.querySelectorAll('[data-collapse-key]').forEach(button=>button.addEventListener('click',()=>{
+    const key=button.dataset.collapseKey;
+    if(collapsedPanels.has(key))collapsedPanels.delete(key);else collapsedPanels.add(key);
+    refreshCollapseControls();
   }));
+  content.querySelectorAll('[data-collapse-all]').forEach(button=>button.addEventListener('click',()=>{
+    const type=button.dataset.collapseAll;
+    const keys=[...content.querySelectorAll('[data-collapse-key]')]
+      .map(node=>node.dataset.collapseKey).filter(key=>key.startsWith(type+':'));
+    const allCollapsed=keys.length>0&&keys.every(key=>collapsedPanels.has(key));
+    keys.forEach(key=>{if(allCollapsed)collapsedPanels.delete(key);else collapsedPanels.add(key);});
+    refreshCollapseControls();
+  }));
+  refreshCollapseControls();
   const folder=selectedFolder;
   const queue=[...currentItems];
   async function worker(){
