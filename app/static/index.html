@@ -133,7 +133,8 @@ async function updateContentForSelection(){
     return '<div class="involved-group"><div class="involved-line collapse-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(groupKey)+'" aria-expanded="true" aria-label="Toggle sender group"></button><label><input type="checkbox" data-group-id="'+groupId+'">'+total+' — '+esc(sender)+'</label></div><div class="collapse-panel" data-panel-key="'+esc(groupKey)+'">'+subjectHtml+'</div></div>';
   }).join('');
   const controls=['group','subject','list'].map(type=>
-    '<button type="button" data-collapse-all="'+type+'"></button>'
+    '<span class="bulk-collapse"><button type="button" data-collapse-all="'+type+'"></button> '+
+    '<button type="button" data-select-all-level="'+type+'"></button></span>'
   ).join('');
   content.innerHTML='<div class="content-summary"><div class="summary-heading">'+esc(selectedFolder)+' — '+selected.length+' messages selected — '+groups.size+' different FROM values</div><div class="collapse-all-controls">'+controls+'</div>'+groupHtml+'</div>';
   function setState(box,uids){
@@ -153,6 +154,29 @@ async function updateContentForSelection(){
       box.addEventListener('change',()=>toggleGroup(uids));
     });
   }
+  function refreshBulkSelectionControls(){
+    content.querySelectorAll('[data-select-all-level]').forEach(button=>{
+      const type=button.dataset.selectAllLevel;
+      const uids=type==='group'?[...groupIds.values()].flat():
+        type==='subject'?[...subjectIds.values()].flat():
+        [...currentItems].map(e=>e.uid);
+      const allSelected=uids.length>0&&uids.every(uid=>selectedUids.has(uid));
+      const label=type==='group'?'groups':type==='subject'?'subgroups':'lists';
+      button.textContent=(allSelected?'Deselect':'Select')+' all '+label;
+      button.disabled=!uids.length;
+      button.setAttribute('aria-label',button.textContent);
+    });
+  }
+  content.querySelectorAll('[data-select-all-level]').forEach(button=>button.addEventListener('click',()=>{
+    const type=button.dataset.selectAllLevel;
+    const uids=type==='group'?[...groupIds.values()].flat():
+      type==='subject'?[...subjectIds.values()].flat():
+      currentItems.map(e=>e.uid);
+    const allSelected=uids.length>0&&uids.every(uid=>selectedUids.has(uid));
+    uids.forEach(uid=>{if(allSelected)selectedUids.delete(uid);else selectedUids.add(uid);});
+    renderList();
+  }));
+  refreshBulkSelectionControls();
   function refreshCollapseControls(){
     content.querySelectorAll('[data-collapse-key]').forEach(button=>{
       const key=button.dataset.collapseKey;
