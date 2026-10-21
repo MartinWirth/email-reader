@@ -12,6 +12,11 @@
 <section id="content" class="content"><span class="muted">Select an email.</span></section>
 </main>
 <script>
+const debugMode=new URLSearchParams(location.search).get('debug')==='1'||localStorage.getItem('email-reader-debug')==='1';
+function debugLog(task,details=''){if(debugMode)console.info('[Email Reader]',new Date().toISOString(),task,details)}
+window.addEventListener('error',event=>console.error('[Email Reader] JavaScript error:',event.message,event.filename,event.lineno));
+window.addEventListener('unhandledrejection',event=>console.error('[Email Reader] Promise rejection:',event.reason));
+debugLog('Startup: script execution started');
 // UI language preference is local to this browser; email content is never translated.
 const languageSelect=document.getElementById('main-language');
 const translations={
@@ -36,12 +41,6 @@ function displaySubject(subject){
   for(const phrase of Object.keys(terms).sort((a,b)=>b.length-a.length)){
     const escaped=phrase.replace(/[.*+?^\${}()|[\]\\]/g,'\\$&');
     cleaned=cleaned.replace(new RegExp('(^|[^\\p{L}])('+escaped+')(?=$|[^\\p{L}])','giu'),
-      (match,prefix)=>prefix+terms[phrase]);
-  }
-  return cleaned||tr('subject');
-}
-function loadLanguage(){');
-    cleaned=cleaned.replace(new RegExp('(^|[^\\\\p{L}])('+escaped+')(?=$|[^\\\\p{L}])','giu'),
       (match,prefix)=>prefix+terms[phrase]);
   }
   return cleaned||tr('subject');
@@ -83,7 +82,7 @@ function loadWidths(){try{const saved=JSON.parse(localStorage.getItem('email-rea
 function saveWidths(){localStorage.setItem('email-reader-column-widths',JSON.stringify(widths))}
 function applyWidths(){resizeKeys.forEach(k=>document.documentElement.style.setProperty('--col-'+k,widths[k]+'px'))}
 applyWidths();
-async function loadFolders(){
+async function loadFolders(){debugLog('Folders: request started');
   // Show the mailbox list as soon as LIST finishes; header loading is independent.
   // Do not make an IMAP LIST round trip a prerequisite for loading email headers.
   const headers=load(emailUrl());
@@ -94,7 +93,7 @@ async function loadFolders(){
     try{
       const r=await fetch('/api/folders',{signal:controller.signal});
       if(!r.ok)throw Error('Folder request failed');
-      items=await r.json();
+      items=await r.json();debugLog('Folders: received',items.length);
     }finally{clearTimeout(timeout)}
     if(!items.some(f=>f.name===selectedFolder)){
       selectedFolder=items.some(f=>f.name==='INBOX')?'INBOX':(items[0]?.name||'INBOX');
@@ -103,13 +102,13 @@ async function loadFolders(){
     }
     folders.innerHTML=items.length?items.map((f,i)=>`<button class="folder ${f.name===selectedFolder?'active':''}" data-folder-index="${i}" title="${esc(f.name)}"><span class="folder-name">${esc(f.name)}</span></button>`).join(''):'<div class="muted">No folders.</div>';
     folders.querySelectorAll('.folder').forEach((button,i)=>button.addEventListener('click',()=>selectFolder(items[i].name)));
-  }catch(e){
+  }catch(e){debugLog('Folders: failed',String(e));
     folders.innerHTML='<div class="muted">Folder listing timed out or failed. Email headers can still load; refresh to retry.</div>';
   }
   await headers;
 }
 async function selectFolder(name){summaryVersion++;summaryVisible=false;bodyCache.clear();collapsedPanels.clear();selectedFolder=name;saveSelectedFolder(name);sortKey='involved';sortDirection='asc';selectedUids.clear();updateSortIndicators();document.querySelectorAll('.folder').forEach(b=>b.classList.toggle('active',b.title===name));search.value='';content.innerHTML='<span class="muted">Select an email.</span>';await load(emailUrl())}
-async function load(url='/api/emails'){summaryVersion++;summaryVisible=false;collapsedPanels.clear();list.textContent='Loading…';try{const r=await fetch(url);if(!r.ok)throw Error();currentItems=await r.json();if(selectedFolder!=='INBOX')selectedUids=new Set(currentItems.map(e=>e.uid));else selectedUids.clear();renderList();}catch(e){list.innerHTML='<div class="muted">Could not connect to mailbox.</div>'}}
+async function load(url='/api/emails'){debugLog('Headers: request started',url);summaryVersion++;summaryVisible=false;collapsedPanels.clear();list.textContent='Loading…';try{const r=await fetch(url);if(!r.ok)throw Error();currentItems=await r.json();debugLog('Headers: received',currentItems.length);if(selectedFolder!=='INBOX')selectedUids=new Set(currentItems.map(e=>e.uid));else selectedUids.clear();renderList();}catch(e){debugLog('Headers: failed',String(e));list.innerHTML='<div class="muted">Could not connect to mailbox.</div>'}}
 function attachmentCount(e){return e.attachment_count??e.attachments?.length??0}
 function renderList(){const items=[...currentItems];if(sortKey)items.sort(compareItems);list.innerHTML=items.length?items.map(e=>{const count=attachmentCount(e),selected=selectedUids.has(e.uid);return `<div class="item ${selected?'selected':''}" data-uid="${esc(e.uid)}" title="${esc(e.subject||'(no subject)')}"><div class="select-cell"><input type="checkbox" class="message-select" data-uid="${esc(e.uid)}" ${selected?'checked':''} aria-label="Select message"></div><div class="cell date">${esc(formatDate(e.date))}</div><div class="cell subject">${esc(e.subject||'(no subject)')}</div><div class="cell involved">${esc(senderLabel(e.from))}</div><div class="cell size">${formatSize(e.size)}</div><div class="cell attachments" title="${count} attachment${count===1?'':'s'}">${count?`<span class="attachment-icon">📎</span>${count}`:'—'}</div></div>`}).join(''):'<div class="muted">No messages.</div>';list.querySelectorAll('.item').forEach(item=>item.addEventListener('click',e=>{if(e.target.closest('.message-select'))return;openMail(item.dataset.uid)}));list.querySelectorAll('.message-select').forEach(box=>box.addEventListener('change',()=>toggleSelection(box.dataset.uid,box.checked)));updateSelectAll();updateSortIndicators();updateContentForSelection()}
 function toggleSelection(uid,checked){if(checked)selectedUids.add(uid);else selectedUids.delete(uid);const item=list.querySelector(`.item[data-uid="${CSS.escape(uid)}"]`);if(item)item.classList.toggle('selected',checked);updateSelectAll();updateContentForSelection()}
