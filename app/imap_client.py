@@ -336,6 +336,60 @@ class Mailbox:
         finally:
             client.logout()
 
+    def restore_from_trash(self, uids: list[str], folder: str):
+        """Move selected messages from a Trash mailbox back to INBOX."""
+        if not uids or any(not re.fullmatch(r"[1-9][0-9]*", uid) for uid in uids):
+            raise ValueError("Invalid message UIDs")
+        client = self._connect_unselected()
+        try:
+            status, folders = client.list()
+            if status != "OK":
+                raise RuntimeError("Could not list IMAP folders")
+            trash_names = set()
+            for entry in folders:
+                if not entry:
+                    continue
+                match = re.match(r'\\(([^)]*)\\)\\s+(?:"[^"]*"|\\S+)\\s+(.+)
+        client = self._connect(folder)
+        try:
+            status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[] RFC822.SIZE)")
+            if status != "OK":
+                return None
+            raw_parts = []
+            size = None
+            for item in fetched:
+                if isinstance(item, tuple):
+                    raw_parts.append(item[1])
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
+                    if match:
+                        size = int(match.group(1))
+                elif isinstance(item, bytes):
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
+                    if match:
+                        size = int(match.group(1))
+            raw = b"".join(raw_parts)
+            return self._parse(uid.encode(), raw, include_body=True, size=size)
+        finally:
+            client.logout()
+, entry.decode("utf-8", errors="replace"))
+                if not match:
+                    continue
+                flags, raw_name = match.groups()
+                name = _decode_mailbox_name(raw_name.strip('"'))
+                if "\\Trash" in flags.split() or name.casefold().split("/")[-1] in ("trash", "deleted items", "deleted messages", "papierkorb"):
+                    trash_names.add(name.casefold())
+            if folder.casefold() not in trash_names:
+                raise ValueError("Select the Trash folder to restore messages")
+            status, _ = client.select(folder, readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select Trash folder")
+            status, _ = client.uid("MOVE", ",".join(uids), "INBOX")
+            if status != "OK":
+                raise RuntimeError("IMAP MOVE to INBOX failed")
+            return {"restored": len(uids), "destination_folder": "INBOX"}
+        finally:
+            client.logout()
+
     def get_message(self, uid: str, folder=None):
         client = self._connect(folder)
         try:
