@@ -18,6 +18,28 @@ const translations={
   en:{language:'Language',folders:'Folders',loading:'Loading…',search:'Search mail…',emails:'Emails',trash:'Trash',date:'Date / time',subject:'SUBJECT',from:'FROM',size:'Raw size',attachments:'Attachments',groups:'groups',subgroups:'subgroups',lists:'lists',collapse:'Collapse',expand:'Expand',select:'Select',deselect:'Deselect',all:'all'},
   de:{language:'Sprache',folders:'Ordner',loading:'Laden…',search:'E-Mails suchen…',emails:'E-Mails',trash:'Papierkorb',date:'Datum / Uhrzeit',subject:'BETREFF',from:'VON',size:'Rohgröße',attachments:'Anhänge',groups:'Gruppen',subgroups:'Untergruppen',lists:'Listen',collapse:'Einklappen',expand:'Ausklappen',select:'Auswählen',deselect:'Abwählen',all:'alle'}
 };
+// Offline, conservative phrase translation for common email subject terms.
+// Unknown words remain unchanged rather than inventing a translation.
+const subjectTerms={
+  en:{'rechnung':'invoice','zahlung':'payment','bestellung':'order','bestätigung':'confirmation','lieferung':'delivery','versand':'shipping','erinnerung':'reminder','einladung':'invitation','besprechung':'meeting','termin':'appointment','anfrage':'inquiry','antwort':'reply','aktualisierung':'update','bericht':'report','angebot':'offer','danke':'thank you','willkommen':'welcome','newsletter':'newsletter','wichtig':'important','benachrichtigung':'notification','passwort':'password','zurücksetzen':'reset','konto':'account','sicherheit':'security','prüfung':'review','information':'information','neuigkeiten':'news','beleg':'receipt','kündigung':'cancellation','gutschrift':'credit note','mahnung':'payment reminder','registrierung':'registration','anmeldung':'registration'},
+  de:{'invoice':'Rechnung','payment':'Zahlung','order':'Bestellung','confirmation':'Bestätigung','delivery':'Lieferung','shipping':'Versand','reminder':'Erinnerung','invitation':'Einladung','meeting':'Besprechung','appointment':'Termin','inquiry':'Anfrage','reply':'Antwort','update':'Aktualisierung','report':'Bericht','offer':'Angebot','thank you':'Danke','welcome':'Willkommen','important':'Wichtig','notification':'Benachrichtigung','password':'Passwort','reset':'Zurücksetzen','account':'Konto','security':'Sicherheit','review':'Prüfung','news':'Neuigkeiten','receipt':'Beleg','cancellation':'Kündigung','credit note':'Gutschrift','payment reminder':'Mahnung','registration':'Registrierung'}
+};
+function displaySubject(subject){
+  let cleaned=String(subject||'').replace(/\\b(?:19|20)\\d{2}[-/.]\\d{1,2}[-/.]\\d{1,2}\\b/g,' ')
+    .replace(/\\b\\d{1,2}[-/.]\\d{1,2}[-/.](?:\\d{2}|\\d{4})\\b/g,' ')
+    .replace(/\\b\\d{1,2}:\\d{2}(?::\\d{2})?\\b/g,' ')
+    .replace(/\\p{N}+/gu,' ')
+    .replace(/\\s+/g,' ').replace(/\\s+([,;:.!?])/g,'$1').trim();
+  cleaned=cleaned.replace(/^[\\s:;,.\\-–—#]+|[\\s:;,.\\-–—#]+$/g,'').trim();
+  const terms=subjectTerms[languageSelect.value]||{};
+  const phrases=Object.keys(terms).sort((a,b)=>b.length-a.length);
+  for(const phrase of phrases){
+    const escaped=phrase.replace(/[.*+?^${}()|[\\]\\\\]/g,'\\\\function loadLanguage(){');
+    cleaned=cleaned.replace(new RegExp('(^|[^\\\\p{L}])('+escaped+')(?=$|[^\\\\p{L}])','giu'),
+      (match,prefix)=>prefix+terms[phrase]);
+  }
+  return cleaned||tr('subject');
+}
 function loadLanguage(){try{return localStorage.getItem('email-reader-language')||'en'}catch{return 'en'}}
 languageSelect.value=translations[loadLanguage()]?loadLanguage():'en';
 function tr(key){return translations[languageSelect.value][key]||key}
@@ -34,7 +56,7 @@ function applyLanguage(){
     if(map[key])button.firstChild.textContent=tr(map[key])+' ';
   });
   const senderLabel=document.querySelector('label[for="sender-display"]');if(senderLabel)senderLabel.firstChild.textContent=tr('from')+' ';
-  if(typeof refreshLanguageSummary==='function')refreshLanguageSummary();
+  if(typeof summaryVisible!=='undefined'&&summaryVisible)updateContentForSelection();
 }
 languageSelect.addEventListener('change',()=>{try{localStorage.setItem('email-reader-language',languageSelect.value)}catch{}applyLanguage()});
 
@@ -151,7 +173,7 @@ async function updateContentForSelection(){
       subjectIds.set(subjectId,messages.map(e=>e.uid));
       const subjectKey='subject:'+sender+'\\u0000'+subject;
       const listKey='list:'+sender+'\\u0000'+subject;
-      return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+messages.length+' — '+esc(subject)+'</label></div>'+
+      return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+esc(displaySubject(subject))+'</label></div>'+
         '<div class="collapse-panel" data-panel-key="'+esc(subjectKey)+'"><div class="list-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(listKey)+'" aria-expanded="true" aria-label="Toggle message list"></button><span>Messages ('+messages.length+')</span></div>'+
         '<ul class="body-excerpts collapse-panel" data-panel-key="'+esc(listKey)+'">'+messages.map(e=>'<li data-excerpt-uid="'+esc(e.uid)+'">Loading excerpt…</li>').join('')+'</ul></div></div>';
     }).join('');
