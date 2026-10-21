@@ -295,6 +295,222 @@ class Mailbox:
         finally:
             client.logout()
 
+    def _restore_db(self):
+        """Persistent source-folder tracking for messages moved by this application."""
+        import sqlite3
+        from pathlib import Path
+        path = Path(os.getenv("EMAIL_READER_STATE_DB", str(Path.home() / ".email-reader" / "restore.sqlite3")))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        db = sqlite3.connect(path, timeout=10)
+        db.execute("CREATE TABLE IF NOT EXISTS trash_origins (message_id TEXT NOT NULL, source_folder TEXT NOT NULL, PRIMARY KEY (message_id, source_folder))")
+        return db
+
+    @staticmethod
+    def _message_ids(client, uids):
+        """Fetch Message-ID headers without downloading message bodies."""
+        found = {}
+        for uid in uids:
+            status, data = client.uid("FETCH", uid, "(BODY.PEEK[HEADER.FIELDS (MESSAGE-ID)])")
+            if status != "OK":
+                raise RuntimeError("Could not read Message-ID before moving to Trash")
+            for part in data or []:
+                if isinstance(part, tuple):
+                    value = email.message_from_bytes(part[1]).get("Message-ID", "").strip()
+                    if value:
+                        found[uid] = value
+        return found
+
+    def _tracked_trash_messages(self, folder):
+        """Return exact Trash UIDs belonging to the tracked source folder."""
+        with self._restore_db() as db:
+            message_ids = [row[0] for row in db.execute(
+                "SELECT message_id FROM trash_origins WHERE source_folder = ?", (folder,))]
+        if not message_ids:
+            return [], None
+        client = self._connect_unselected()
+        try:
+            status, entries = client.list()
+            if status != "OK":
+                raise RuntimeError("Could not list IMAP folders")
+            trash = None
+            for entry in entries:
+                if not entry:
+                    continue
+                match = re.match(r'\(([^)]*)\)\s+(?:"[^"]*"|\S+)\s+(.+)
+        """Move messages to the IMAP Trash mailbox without permanent deletion."""
+        if not uids or any(not re.fullmatch(r"[1-9][0-9]*", uid) for uid in uids):
+            raise ValueError("Invalid message UIDs")
+        client = self._connect_unselected()
+        try:
+            status, folders = client.list()
+            if status != "OK":
+                raise RuntimeError("Could not list IMAP folders")
+            trash = None
+            fallback = None
+            for entry in folders:
+                if not entry:
+                    continue
+                line = entry.decode("utf-8", errors="replace")
+                match = re.match(r'\(([^)]*)\)\s+(?:"[^"]*"|\S+)\s+(.+)$', line)
+                if not match:
+                    continue
+                flags, raw_name = match.groups()
+                name = _decode_mailbox_name(raw_name.strip('"'))
+                if "\\Trash" in flags.split():
+                    trash = raw_name
+                    break
+                if name.casefold().split("/")[-1] in ("trash", "deleted items", "deleted messages", "papierkorb"):
+                    fallback = raw_name
+            trash = trash or fallback
+            if trash is None:
+                raise ValueError("No Trash folder found")
+            source = folder or self.folder
+            if _decode_mailbox_name(trash.strip('"')).casefold() == source.casefold():
+                raise ValueError("Messages are already in Trash")
+            status, _ = client.select(source, readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select source folder")
+            tracked_ids = self._message_ids(client, uids)
+            status, _ = client.uid("MOVE", ",".join(uids), trash)
+            if status != "OK":
+                raise RuntimeError("IMAP MOVE to Trash failed")
+            if tracked_ids:
+                with self._restore_db() as db:
+                    db.executemany("INSERT OR IGNORE INTO trash_origins (message_id, source_folder) VALUES (?, ?)",
+                                   [(message_id, source) for message_id in tracked_ids.values()])
+            return {"moved": len(uids), "trash_folder": _decode_mailbox_name(trash.strip('"'))}
+        finally:
+            client.logout()
+
+    def restore_from_trash(self, uids: list[str], folder: str):
+        """Move selected messages from a Trash mailbox back to INBOX."""
+        if not uids or any(not re.fullmatch(r"[1-9][0-9]*", uid) for uid in uids):
+            raise ValueError("Invalid message UIDs")
+        client = self._connect_unselected()
+        try:
+            status, folders = client.list()
+            if status != "OK":
+                raise RuntimeError("Could not list IMAP folders")
+            trash_names = set()
+            for entry in folders:
+                if not entry:
+                    continue
+                match = re.match(r'\\(([^)]*)\\)\\s+(?:"[^"]*"|\\S+)\\s+(.+)
+        client = self._connect(folder)
+        try:
+            status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[] RFC822.SIZE)")
+            if status != "OK":
+                return None
+            raw_parts = []
+            size = None
+            for item in fetched:
+                if isinstance(item, tuple):
+                    raw_parts.append(item[1])
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
+                    if match:
+                        size = int(match.group(1))
+                elif isinstance(item, bytes):
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
+                    if match:
+                        size = int(match.group(1))
+            raw = b"".join(raw_parts)
+            return self._parse(uid.encode(), raw, include_body=True, size=size)
+        finally:
+            client.logout()
+, entry.decode("utf-8", errors="replace"))
+                if not match:
+                    continue
+                flags, raw_name = match.groups()
+                name = _decode_mailbox_name(raw_name.strip('"'))
+                if "\\Trash" in flags.split() or name.casefold().split("/")[-1] in ("trash", "deleted items", "deleted messages", "papierkorb"):
+                    trash_names.add(name.casefold())
+            if folder.casefold() not in trash_names:
+                raise ValueError("Select the Trash folder to restore messages")
+            status, _ = client.select(folder, readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select Trash folder")
+            status, _ = client.uid("MOVE", ",".join(uids), "INBOX")
+            if status != "OK":
+                raise RuntimeError("IMAP MOVE to INBOX failed")
+            return {"restored": len(uids), "destination_folder": "INBOX"}
+        finally:
+            client.logout()
+
+    def get_message(self, uid: str, folder=None):
+        client = self._connect(folder)
+        try:
+            status, fetched = client.uid("fetch", uid.encode(), "(BODY.PEEK[] RFC822.SIZE)")
+            if status != "OK":
+                return None
+            raw_parts = []
+            size = None
+            for item in fetched:
+                if isinstance(item, tuple):
+                    raw_parts.append(item[1])
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item[0])
+                    if match:
+                        size = int(match.group(1))
+                elif isinstance(item, bytes):
+                    match = re.search(rb"RFC822\.SIZE\s+(\d+)", item)
+                    if match:
+                        size = int(match.group(1))
+            raw = b"".join(raw_parts)
+            return self._parse(uid.encode(), raw, include_body=True, size=size)
+        finally:
+            client.logout()
+,
+                                 entry.decode("utf-8", errors="replace"))
+                if not match:
+                    continue
+                flags, raw_name = match.groups()
+                name = _decode_mailbox_name(raw_name.strip('"'))
+                if "\\Trash" in flags.split():
+                    trash = raw_name
+                    break
+                if trash is None and name.casefold().split("/")[-1] in (
+                    "trash", "deleted items", "deleted messages", "papierkorb"):
+                    trash = raw_name
+            if trash is None:
+                return [], None
+            status, _ = client.select(trash, readonly=True)
+            if status != "OK":
+                raise RuntimeError("Could not select Trash folder")
+            matched = []
+            for message_id in message_ids:
+                status, data = client.uid("SEARCH", None, "HEADER", "Message-ID", '"'+message_id.replace("\\", "\\\\").replace('"', '\\"')+'"')
+                if status != "OK":
+                    raise RuntimeError("Could not search Trash")
+                candidates = [v.decode("ascii") for v in (data[0] or b"").split()]
+                for uid, actual in self._message_ids(client, candidates).items():
+                    if actual == message_id:
+                        matched.append((uid, message_id))
+            return list(dict.fromkeys(matched)), trash
+        finally:
+            client.logout()
+
+    def restore_available(self, folder):
+        matches, _ = self._tracked_trash_messages(folder)
+        return {"count": len(matches)}
+
+    def restore_to_folder(self, folder):
+        matches, trash = self._tracked_trash_messages(folder)
+        if not matches:
+            return {"restored": 0, "destination_folder": folder}
+        client = self._connect_unselected()
+        try:
+            status, _ = client.select(trash, readonly=False)
+            if status != "OK":
+                raise RuntimeError("Could not select Trash folder")
+            status, _ = client.uid("MOVE", ",".join(uid for uid, _ in matches), folder)
+            if status != "OK":
+                raise RuntimeError("Could not restore messages to source folder")
+            with self._restore_db() as db:
+                db.executemany("DELETE FROM trash_origins WHERE message_id = ? AND source_folder = ?",
+                               [(message_id, folder) for _, message_id in matches])
+            return {"restored": len(matches), "destination_folder": folder}
+        finally:
+            client.logout()
+
     def move_to_trash(self, uids: list[str], folder: str | None = None):
         """Move messages to the IMAP Trash mailbox without permanent deletion."""
         if not uids or any(not re.fullmatch(r"[1-9][0-9]*", uid) for uid in uids):
