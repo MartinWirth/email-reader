@@ -220,16 +220,14 @@ async function updateContentForSelection(){
       const subjectId=String(nextId++);
       subjectIds.set(subjectId,messages.map(e=>e.uid));
       const subjectKey='subject:'+sender+'\\u0000'+subject;
-      const listKey='list:'+sender+'\\u0000'+subject;
-      if(!collapsedPanels.has(listKey))collapsedPanels.add(listKey);
       return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+messages.length+' — '+esc(displaySubject(subject))+'</label></div>'+
-        '<div class="collapse-panel" data-panel-key="'+esc(subjectKey)+'"><div class="list-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(listKey)+'" aria-expanded="true" aria-label="Toggle message list"></button><span>Messages ('+messages.length+')</span></div>'+
-        '<ul class="body-excerpts collapse-panel" data-panel-key="'+esc(listKey)+'">'+messages.map(e=>'<li data-excerpt-uid="'+esc(e.uid)+'">Loading excerpt…</li>').join('')+'</ul></div></div>';
+        '<div class="collapse-panel" data-panel-key="'+esc(subjectKey)+'"><div class="list-heading"><span>Messages ('+messages.length+')</span></div>'+
+        '<ul class="body-excerpts">'+messages.map(e=>'<li data-excerpt-uid="'+esc(e.uid)+'">Loading excerpt…</li>').join('')+'</ul></div></div>';
     }).join('');
     const groupKey='group:'+sender;
     return '<div class="involved-group"><div class="involved-line collapse-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(groupKey)+'" aria-expanded="true" aria-label="Toggle sender group"></button><label><input type="checkbox" data-group-id="'+groupId+'">'+total+' — '+esc(sender)+'</label></div><div class="collapse-panel" data-panel-key="'+esc(groupKey)+'">'+subjectHtml+'</div></div>';
   }).join('');
-  const collapseControls=['group','subject','list'].map(type=>
+  const collapseControls=['group','subject'].map(type=>
     '<button type="button" data-collapse-all="'+type+'"></button>'
   ).join('');
   const selectionControls=['group','subject','list'].map(type=>
