@@ -222,7 +222,7 @@ async function updateContentForSelection(){
       const subjectKey='subject:'+sender+'\\u0000'+subject;
       const listKey='list:'+sender+'\\u0000'+subject;
       if(!collapsedPanels.has(listKey))collapsedPanels.add(listKey);
-      return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+esc(displaySubject(subject))+'</label></div>'+
+      return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+messages.length+' — '+esc(displaySubject(subject))+'</label></div>'+
         '<div class="collapse-panel" data-panel-key="'+esc(subjectKey)+'"><div class="list-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(listKey)+'" aria-expanded="true" aria-label="Toggle message list"></button><span>Messages ('+messages.length+')</span></div>'+
         '<ul class="body-excerpts collapse-panel" data-panel-key="'+esc(listKey)+'">'+messages.map(e=>'<li data-excerpt-uid="'+esc(e.uid)+'">Loading excerpt…</li>').join('')+'</ul></div></div>';
     }).join('');
