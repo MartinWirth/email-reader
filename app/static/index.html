@@ -86,6 +86,7 @@ function applyLanguage(){
 languageSelect.addEventListener('change',()=>{try{localStorage.setItem('email-reader-language',languageSelect.value)}catch{}applyLanguage()});
 
 const folders=document.querySelector('#folders'),list=document.querySelector('#list'),content=document.querySelector('#content'),search=document.querySelector('#search'),selectAll=document.querySelector('#select-all'),emailLimit=document.querySelector('#email-limit'),trashButton=document.querySelector('#trash-button'),restoreButton=document.querySelector('#restore-button'),senderDisplay=document.querySelector('#sender-display');
+let restorableCount=0,restoreCheckVersion=0;
 let selectedFolder=loadSelectedFolder(),currentItems=[],selectedUids=new Set(),sortKey='involved',sortDirection='asc';
 const bodyCache=new Map(),collapsedPanels=new Set();let summaryVersion=0,summaryVisible=false;
 function loadSelectedFolder(){try{return localStorage.getItem('email-reader-selected-folder')||'INBOX'}catch{return 'INBOX'}}
@@ -128,12 +129,23 @@ async function loadFolders(){debugLog('Folders: request started');
   await headers;
 }
 async function selectFolder(name){summaryVersion++;summaryVisible=false;bodyCache.clear();collapsedPanels.clear();selectedFolder=name;saveSelectedFolder(name);sortKey='involved';sortDirection='asc';selectedUids.clear();updateSortIndicators();document.querySelectorAll('.folder').forEach(b=>b.classList.toggle('active',b.title===name));search.value='';content.innerHTML='<span class="muted">Select an email.</span>';await load(emailUrl())}
-async function load(url='/api/emails'){debugLog('Headers: request started',url);summaryVersion++;summaryVisible=false;collapsedPanels.clear();list.textContent='Loading…';try{const r=await fetch(url);if(!r.ok)throw Error();currentItems=await r.json();debugLog('Headers: received',currentItems.length);selectedUids=new Set(currentItems.map(e=>e.uid));debugLog('Headers: automatically selected',selectedUids.size);renderList();}catch(e){debugLog('Headers: failed',String(e));list.innerHTML='<div class="muted">Could not connect to mailbox.</div>'}}
+async function checkRestorableMessages(folder,version){
+  try{
+    const response=await fetch('/api/emails/restore-available?folder='+encodeURIComponent(folder));
+    if(!response.ok)throw Error('Restore availability request failed');
+    const result=await response.json();
+    if(version!==restoreCheckVersion||selectedFolder!==folder)return;
+    restorableCount=result.count||0;
+    debugLog('Restore: available from Trash',restorableCount);
+    updateSelectAll();
+  }catch(error){if(version===restoreCheckVersion)debugLog('Restore: availability failed',String(error))}
+}
+async function load(url='/api/emails'){debugLog('Headers: request started',url);restorableCount=0;const restoreVersion=++restoreCheckVersion;restoreButton.hidden=true;summaryVersion++;summaryVisible=false;collapsedPanels.clear();list.textContent='Loading…';try{const r=await fetch(url);if(!r.ok)throw Error();currentItems=await r.json();debugLog('Headers: received',currentItems.length);selectedUids=new Set(currentItems.map(e=>e.uid));debugLog('Headers: automatically selected',selectedUids.size);renderList();if(!isTrashFolder())void checkRestorableMessages(selectedFolder,restoreVersion);}catch(e){debugLog('Headers: failed',String(e));list.innerHTML='<div class="muted">Could not connect to mailbox.</div>'}}
 function attachmentCount(e){return e.attachment_count??e.attachments?.length??0}
 function renderList(){const items=[...currentItems];if(sortKey)items.sort(compareItems);list.innerHTML=items.length?items.map(e=>{const count=attachmentCount(e),selected=selectedUids.has(e.uid);return `<div class="item ${selected?'selected':''}" data-uid="${esc(e.uid)}" title="${esc(e.subject||'(no subject)')}"><div class="select-cell"><input type="checkbox" class="message-select" data-uid="${esc(e.uid)}" ${selected?'checked':''} aria-label="Select message"></div><div class="cell date">${esc(formatDate(e.date))}</div><div class="cell subject">${esc(e.subject||'(no subject)')}</div><div class="cell involved">${esc(senderLabel(e.from))}</div><div class="cell size">${formatSize(e.size)}</div><div class="cell attachments" title="${count} attachment${count===1?'':'s'}">${count?`<span class="attachment-icon">📎</span>${count}`:'—'}</div></div>`}).join(''):'<div class="muted">No messages.</div>';list.querySelectorAll('.item').forEach(item=>item.addEventListener('click',e=>{if(e.target.closest('.message-select'))return;openMail(item.dataset.uid)}));list.querySelectorAll('.message-select').forEach(box=>box.addEventListener('change',()=>toggleSelection(box.dataset.uid,box.checked)));updateSelectAll();updateSortIndicators();updateContentForSelection()}
 function toggleSelection(uid,checked){if(checked)selectedUids.add(uid);else selectedUids.delete(uid);const item=list.querySelector(`.item[data-uid="${CSS.escape(uid)}"]`);if(item)item.classList.toggle('selected',checked);updateSelectAll();updateContentForSelection()}
 function isTrashFolder(){return ['trash','deleted items','deleted messages','papierkorb'].includes(selectedFolder.toLowerCase().split('/').pop())}
-function updateSelectAll(){const hasSelection=currentItems.some(e=>selectedUids.has(e.uid));trashButton.disabled=!hasSelection||isTrashFolder();restoreButton.hidden=!isTrashFolder();restoreButton.disabled=!hasSelection||!isTrashFolder();const count=currentItems.filter(e=>selectedUids.has(e.uid)).length;selectAll.checked=currentItems.length>0&&count===currentItems.length;selectAll.indeterminate=count>0&&count<currentItems.length}
+function updateSelectAll(){const hasSelection=currentItems.some(e=>selectedUids.has(e.uid));trashButton.disabled=!hasSelection||isTrashFolder();restoreButton.hidden=!isTrashFolder()&&restorableCount===0;restoreButton.disabled=isTrashFolder()?!hasSelection:restorableCount===0;const count=currentItems.filter(e=>selectedUids.has(e.uid)).length;selectAll.checked=currentItems.length>0&&count===currentItems.length;selectAll.indeterminate=count>0&&count<currentItems.length}
 async function moveSelectedToTrash(){
   const uids=currentItems.filter(e=>selectedUids.has(e.uid)).map(e=>e.uid);
   if(!uids.length)return;
@@ -158,7 +170,17 @@ async function moveSelectedToTrash(){
 }
 trashButton.addEventListener('click',moveSelectedToTrash);
 async function restoreSelectedFromTrash(){
-  if(!isTrashFolder())return;
+  if(!isTrashFolder()){
+    if(!restorableCount||!confirm('Restore '+restorableCount+' email(s) from Trash to '+selectedFolder+'?'))return;
+    restoreButton.disabled=true;
+    try{
+      const response=await fetch('/api/emails/restore-folder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({folder:selectedFolder})});
+      const result=await response.json();
+      if(!response.ok)throw Error(result.detail||'Restore failed');
+      await load(emailUrl(search.value.trim()));
+    }catch(error){alert(error.message||'Restore failed');updateSelectAll()}
+    return;
+  }
   const uids=currentItems.filter(e=>selectedUids.has(e.uid)).map(e=>e.uid);
   if(!uids.length||!confirm('Restore '+uids.length+' selected email(s) to INBOX?'))return;
   restoreButton.disabled=true;
