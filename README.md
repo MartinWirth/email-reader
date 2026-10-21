@@ -90,6 +90,10 @@ For Gmail, use an App Password when 2-Step Verification is enabled; do not put y
 
 ## Restore messages from Trash
 
+**Trash destination:** The app recognizes IMAP `\\Trash` flags and common localized names, including `Gelöscht`. To force a particular destination, set `IMAP_TRASH_FOLDER=Gelöscht` in `.env` and restart FastAPI. This overrides automatic detection.
+
+
+
 When you move messages to Trash using this application, their Message-ID and original folder are recorded locally in a SQLite database at `~/.email-reader/restore.sqlite3`. Override the location with `EMAIL_READER_STATE_DB` in `.env`.
 
 The **Back** button is shown in a non-Trash folder only when matching tracked messages still exist in Trash. Clicking it restores those messages to the currently displayed original folder. In Trash itself, **Back** restores selected messages to INBOX.
