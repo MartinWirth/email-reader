@@ -173,6 +173,7 @@ async function updateContentForSelection(){
       subjectIds.set(subjectId,messages.map(e=>e.uid));
       const subjectKey='subject:'+sender+'\\u0000'+subject;
       const listKey='list:'+sender+'\\u0000'+subject;
+      if(!collapsedPanels.has(listKey))collapsedPanels.add(listKey);
       return '<div class="subject-block"><div class="subject-line"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(subjectKey)+'" aria-expanded="true" aria-label="Toggle subject group"></button><label><input type="checkbox" data-subject-id="'+subjectId+'">'+esc(displaySubject(subject))+'</label></div>'+
         '<div class="collapse-panel" data-panel-key="'+esc(subjectKey)+'"><div class="list-heading"><button type="button" class="collapse-toggle" data-collapse-key="'+esc(listKey)+'" aria-expanded="true" aria-label="Toggle message list"></button><span>Messages ('+messages.length+')</span></div>'+
         '<ul class="body-excerpts collapse-panel" data-panel-key="'+esc(listKey)+'">'+messages.map(e=>'<li data-excerpt-uid="'+esc(e.uid)+'">Loading excerpt…</li>').join('')+'</ul></div></div>';
@@ -261,19 +262,36 @@ async function updateContentForSelection(){
     refreshCollapseControls();
   }));
   refreshCollapseControls();
-  const folder=selectedFolder;
-  const queue=[...currentItems];
-  async function worker(){
-    while(queue.length){
-      if(version!==summaryVersion)return;
-      const e=queue.shift();
-      const excerpt=await getBodyExcerpt(e.uid,folder);
-      if(version!==summaryVersion)return;
-      const target=[...content.querySelectorAll('[data-excerpt-uid]')].find(node=>node.dataset.excerptUid===e.uid);
-      if(target)target.innerHTML=excerpt;
-    }
+  // Excerpts are fetched only when their message lists are expanded.
+  // Opening a folder must not trigger a full IMAP fetch for every message.
+  let excerptLoading=false;
+  async function loadExpandedExcerpts(){
+    if(excerptLoading)return;
+    excerptLoading=true;
+    try{
+      const folder=selectedFolder;
+      const pending=[...content.querySelectorAll('[data-excerpt-uid]')].filter(node=>{
+        if(node.dataset.excerptLoaded)return false;
+        const listPanel=node.closest('[data-panel-key]');
+        return listPanel&&!listPanel.hidden;
+      });
+      const queue=pending.slice();
+      async function worker(){
+        while(queue.length&&version===summaryVersion){
+          const node=queue.shift();
+          if(!node||node.dataset.excerptLoaded)continue;
+          node.dataset.excerptLoaded='true';
+          const excerpt=await getBodyExcerpt(node.dataset.excerptUid,folder);
+          if(version===summaryVersion&&node.isConnected)node.innerHTML=excerpt;
+        }
+      }
+      await Promise.all(Array.from({length:Math.min(2,queue.length)},()=>worker()));
+    }finally{excerptLoading=false}
   }
-  await Promise.all(Array.from({length:Math.min(4,queue.length)},()=>worker()));
+  content.querySelectorAll('[data-collapse-key],[data-collapse-all]').forEach(button=>
+    button.addEventListener('click',()=>{void loadExpandedExcerpts()})
+  );
+  void loadExpandedExcerpts();
 }
 function compareItems(a,b){let result=compareValues(getSortValue(a,sortKey),getSortValue(b,sortKey));if(result===0){const secondary=sortKey==='involved'?'subject':sortKey==='subject'?'involved':null;if(secondary)result=compareValues(getSortValue(a,secondary),getSortValue(b,secondary));}return sortDirection==='asc'?result:-result}
 function compareValues(av,bv){if(typeof av==='number'&&typeof bv==='number')return av-bv;return String(av).localeCompare(String(bv),undefined,{numeric:true,sensitivity:'base'})}
