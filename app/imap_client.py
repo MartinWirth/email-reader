@@ -280,11 +280,11 @@ class Mailbox:
                     if not isinstance(item, tuple):
                         continue
                     metadata, raw = item
-                    uid_match = re.search(rb"\\bUID\\s+(\\d+)\\b", metadata, re.IGNORECASE)
+                    uid_match = re.search(rb"\bUID\s+(\d+)\b", metadata, re.IGNORECASE)
                     if not uid_match:
                         continue
                     uid = uid_match.group(1)
-                    size_match = re.search(rb"RFC822\\.SIZE\\s+(\\d+)", metadata, re.IGNORECASE)
+                    size_match = re.search(rb"RFC822\.SIZE\s+(\d+)", metadata, re.IGNORECASE)
                     size = int(size_match.group(1)) if size_match else None
                     message = self._parse(uid, raw, size=size)
                     message["attachment_count"] = _attachment_count_from_bodystructure(metadata)
