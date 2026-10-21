@@ -1,4 +1,6 @@
 import os
+import logging
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Query
@@ -8,6 +10,9 @@ from dotenv import load_dotenv
 from .imap_client import Mailbox
 
 load_dotenv()
+DEBUG_MODE=os.getenv('EMAIL_READER_DEBUG','').lower() in ('1','true','yes','on')
+logging.basicConfig(level=logging.DEBUG if DEBUG_MODE else logging.INFO)
+logger=logging.getLogger('email_reader.api')
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -21,6 +26,17 @@ def mailbox():
         return Mailbox()
     except KeyError as exc:
         raise HTTPException(500, f"Missing environment variable: {exc.args[0]}")
+
+
+@app.middleware('http')
+async def log_requests(request, call_next):
+    started=time.monotonic()
+    if DEBUG_MODE:
+        logger.debug('Request started: %s',request.url.path)
+    response=await call_next(request)
+    if DEBUG_MODE:
+        logger.debug('Request finished: %s status=%s elapsed_ms=%d',request.url.path,response.status_code,int((time.monotonic()-started)*1000))
+    return response
 
 
 @app.get("/health")
