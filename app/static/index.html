@@ -8,7 +8,7 @@
 .debug-toggle{padding:7px 10px;border:1px solid #bbb;border-radius:6px;background:white;cursor:pointer}.debug-panel{position:fixed;bottom:0;left:0;right:0;height:34vh;overflow:auto;background:#171a20;color:#d7f5d1;z-index:9999;padding:12px;font:12px/1.5 monospace;white-space:pre-wrap;box-shadow:0 -2px 10px #0004}.debug-panel[hidden]{display:none}</style></head>
 <body><header style="display:flex;align-items:center;justify-content:space-between;gap:12px"><strong>📧 Email Reader</strong><button id="debug-toggle" class="debug-toggle" type="button" hidden aria-expanded="false">Show Debug Log</button><label class="limit-control" for="main-language"><span data-i18n="language">Language</span> <select id="main-language" aria-label="Main language"><option value="en">English</option><option value="de">Deutsch</option></select></label></header><main>
 <aside class="folder-sidebar"><div class="section-title">Folders</div><div id="folders" class="folders">Loading…</div></aside>
-<section class="mail-list"><div class="mail-controls"><label class="limit-control" for="sender-display">FROM <select id="sender-display"><option value="both">Name + Email</option><option value="email">Email address</option><option value="name">Name</option></select></label><button id="trash-button" class="trash-button" type="button" disabled>Trash</button><input id="search" class="search" placeholder="Search mail…"><label class="limit-control" for="email-limit">Emails <select id="email-limit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label></div><div class="list-header"><div class="select-cell"><input id="select-all" type="checkbox" title="Select all displayed messages"></div><div><button class="sort-button" data-sort="date">Date / time <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="date" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="subject">SUBJECT <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="subject" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="involved">FROM <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="involved" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="size">Raw size <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="size" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="attachments">Attachments <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="attachments" title="Drag to resize column"></span></div></div><div id="list" class="muted">Loading…</div></section>
+<section class="mail-list"><div class="mail-controls"><label class="limit-control" for="sender-display">FROM <select id="sender-display"><option value="both">Name + Email</option><option value="email">Email address</option><option value="name">Name</option></select></label><button id="trash-button" class="trash-button" type="button" disabled>Trash</button><button id="restore-button" class="trash-button" type="button" disabled hidden>Back</button><input id="search" class="search" placeholder="Search mail…"><label class="limit-control" for="email-limit">Emails <select id="email-limit"><option value="10">10</option><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></label></div><div class="list-header"><div class="select-cell"><input id="select-all" type="checkbox" title="Select all displayed messages"></div><div><button class="sort-button" data-sort="date">Date / time <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="date" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="subject">SUBJECT <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="subject" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="involved">FROM <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="involved" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="size">Raw size <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="size" title="Drag to resize column"></span></div><div><button class="sort-button" data-sort="attachments">Attachments <span class="sort-indicator"></span></button><span class="resize-handle" data-resize="attachments" title="Drag to resize column"></span></div></div><div id="list" class="muted">Loading…</div></section>
 <section id="content" class="content"><span class="muted">Select an email.</span></section>
 </main><div id="debug-panel" class="debug-panel" role="log" aria-live="off" hidden></div>
 <script>
@@ -39,8 +39,8 @@ debugLog('Startup: script execution started');
 // UI language preference is local to this browser; email content is never translated.
 const languageSelect=document.getElementById('main-language');
 const translations={
-  en:{language:'Language',folders:'Folders',loading:'Loading…',search:'Search mail…',emails:'Emails',trash:'Trash',date:'Date / time',subject:'SUBJECT',from:'FROM',size:'Raw size',attachments:'Attachments',groups:'groups',subgroups:'subgroups',lists:'lists',collapse:'Collapse',expand:'Expand',select:'Select',deselect:'Deselect',all:'all'},
-  de:{language:'Sprache',folders:'Ordner',loading:'Laden…',search:'E-Mails suchen…',emails:'E-Mails',trash:'Papierkorb',date:'Datum / Uhrzeit',subject:'BETREFF',from:'VON',size:'Rohgröße',attachments:'Anhänge',groups:'Gruppen',subgroups:'Untergruppen',lists:'Listen',collapse:'Einklappen',expand:'Ausklappen',select:'Auswählen',deselect:'Abwählen',all:'alle'}
+  en:{language:'Language',folders:'Folders',loading:'Loading…',search:'Search mail…',emails:'Emails',trash:'Trash',restore:'Back',date:'Date / time',subject:'SUBJECT',from:'FROM',size:'Raw size',attachments:'Attachments',groups:'groups',subgroups:'subgroups',lists:'lists',collapse:'Collapse',expand:'Expand',select:'Select',deselect:'Deselect',all:'all'},
+  de:{language:'Sprache',folders:'Ordner',loading:'Laden…',search:'E-Mails suchen…',emails:'E-Mails',trash:'Papierkorb',restore:'Zurück',date:'Datum / Uhrzeit',subject:'BETREFF',from:'VON',size:'Rohgröße',attachments:'Anhänge',groups:'Gruppen',subgroups:'Untergruppen',lists:'Listen',collapse:'Einklappen',expand:'Ausklappen',select:'Auswählen',deselect:'Abwählen',all:'alle'}
 };
 // Offline, conservative phrase translation for common email subject terms.
 // Unknown words remain unchanged rather than inventing a translation.
@@ -72,6 +72,7 @@ function applyLanguage(){
   document.querySelectorAll('[data-i18n]').forEach(el=>{el.textContent=tr(el.dataset.i18n)});
   const searchBox=document.getElementById('search');if(searchBox)searchBox.placeholder=tr('search');
   const trash=document.getElementById('trash-button');if(trash)trash.textContent=tr('trash');
+  const restore=document.getElementById('restore-button');if(restore)restore.textContent=tr('restore');
   const foldersTitle=document.querySelector('.folder-sidebar .section-title');if(foldersTitle)foldersTitle.textContent=tr('folders');
   const emailsLabel=document.querySelector('label[for="email-limit"]');if(emailsLabel)emailsLabel.firstChild.textContent=tr('emails')+' ';
   document.querySelectorAll('[data-sort]').forEach(button=>{
@@ -84,7 +85,7 @@ function applyLanguage(){
 }
 languageSelect.addEventListener('change',()=>{try{localStorage.setItem('email-reader-language',languageSelect.value)}catch{}applyLanguage()});
 
-const folders=document.querySelector('#folders'),list=document.querySelector('#list'),content=document.querySelector('#content'),search=document.querySelector('#search'),selectAll=document.querySelector('#select-all'),emailLimit=document.querySelector('#email-limit'),trashButton=document.querySelector('#trash-button'),senderDisplay=document.querySelector('#sender-display');
+const folders=document.querySelector('#folders'),list=document.querySelector('#list'),content=document.querySelector('#content'),search=document.querySelector('#search'),selectAll=document.querySelector('#select-all'),emailLimit=document.querySelector('#email-limit'),trashButton=document.querySelector('#trash-button'),restoreButton=document.querySelector('#restore-button'),senderDisplay=document.querySelector('#sender-display');
 let selectedFolder=loadSelectedFolder(),currentItems=[],selectedUids=new Set(),sortKey='involved',sortDirection='asc';
 const bodyCache=new Map(),collapsedPanels=new Set();let summaryVersion=0,summaryVisible=false;
 function loadSelectedFolder(){try{return localStorage.getItem('email-reader-selected-folder')||'INBOX'}catch{return 'INBOX'}}
@@ -131,7 +132,8 @@ async function load(url='/api/emails'){debugLog('Headers: request started',url);
 function attachmentCount(e){return e.attachment_count??e.attachments?.length??0}
 function renderList(){const items=[...currentItems];if(sortKey)items.sort(compareItems);list.innerHTML=items.length?items.map(e=>{const count=attachmentCount(e),selected=selectedUids.has(e.uid);return `<div class="item ${selected?'selected':''}" data-uid="${esc(e.uid)}" title="${esc(e.subject||'(no subject)')}"><div class="select-cell"><input type="checkbox" class="message-select" data-uid="${esc(e.uid)}" ${selected?'checked':''} aria-label="Select message"></div><div class="cell date">${esc(formatDate(e.date))}</div><div class="cell subject">${esc(e.subject||'(no subject)')}</div><div class="cell involved">${esc(senderLabel(e.from))}</div><div class="cell size">${formatSize(e.size)}</div><div class="cell attachments" title="${count} attachment${count===1?'':'s'}">${count?`<span class="attachment-icon">📎</span>${count}`:'—'}</div></div>`}).join(''):'<div class="muted">No messages.</div>';list.querySelectorAll('.item').forEach(item=>item.addEventListener('click',e=>{if(e.target.closest('.message-select'))return;openMail(item.dataset.uid)}));list.querySelectorAll('.message-select').forEach(box=>box.addEventListener('change',()=>toggleSelection(box.dataset.uid,box.checked)));updateSelectAll();updateSortIndicators();updateContentForSelection()}
 function toggleSelection(uid,checked){if(checked)selectedUids.add(uid);else selectedUids.delete(uid);const item=list.querySelector(`.item[data-uid="${CSS.escape(uid)}"]`);if(item)item.classList.toggle('selected',checked);updateSelectAll();updateContentForSelection()}
-function updateSelectAll(){trashButton.disabled=!currentItems.some(e=>selectedUids.has(e.uid));const count=currentItems.filter(e=>selectedUids.has(e.uid)).length;selectAll.checked=currentItems.length>0&&count===currentItems.length;selectAll.indeterminate=count>0&&count<currentItems.length}
+function isTrashFolder(){return ['trash','deleted items','deleted messages','papierkorb'].includes(selectedFolder.toLowerCase().split('/').pop())}
+function updateSelectAll(){const hasSelection=currentItems.some(e=>selectedUids.has(e.uid));trashButton.disabled=!hasSelection||isTrashFolder();restoreButton.hidden=!isTrashFolder();restoreButton.disabled=!hasSelection||!isTrashFolder();const count=currentItems.filter(e=>selectedUids.has(e.uid)).length;selectAll.checked=currentItems.length>0&&count===currentItems.length;selectAll.indeterminate=count>0&&count<currentItems.length}
 async function moveSelectedToTrash(){
   const uids=currentItems.filter(e=>selectedUids.has(e.uid)).map(e=>e.uid);
   if(!uids.length)return;
@@ -155,6 +157,23 @@ async function moveSelectedToTrash(){
   }
 }
 trashButton.addEventListener('click',moveSelectedToTrash);
+async function restoreSelectedFromTrash(){
+  if(!isTrashFolder())return;
+  const uids=currentItems.filter(e=>selectedUids.has(e.uid)).map(e=>e.uid);
+  if(!uids.length||!confirm('Restore '+uids.length+' selected email(s) to INBOX?'))return;
+  restoreButton.disabled=true;
+  try{
+    const response=await fetch('/api/emails/restore',{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({folder:selectedFolder,uids})
+    });
+    const result=await response.json();
+    if(!response.ok)throw Error(result.detail||'Restore failed');
+    selectedUids.clear();bodyCache.clear();
+    await load(emailUrl(search.value.trim()));
+  }catch(error){alert(error.message||'Restore failed');updateSelectAll()}
+}
+restoreButton.addEventListener('click',restoreSelectedFromTrash);
 selectAll.addEventListener('change',()=>{if(selectAll.checked)currentItems.forEach(e=>selectedUids.add(e.uid));else currentItems.forEach(e=>selectedUids.delete(e.uid));renderList()});
 function parseSender(value){
   const raw=String(value||'').trim();
