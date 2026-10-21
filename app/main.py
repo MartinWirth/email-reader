@@ -74,6 +74,16 @@ def trash_emails(request: TrashRequest):
         raise HTTPException(502, str(exc)) from exc
 
 
+@app.post("/api/emails/restore")
+def restore_emails(request: TrashRequest):
+    try:
+        return mailbox().restore_from_trash(request.uids, folder=request.folder)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.get("/api/emails/{uid}")
 def email_detail(uid: str, folder: str | None = Query(None)):
     result = mailbox().get_message(uid, folder=folder)
