@@ -84,6 +84,28 @@ def restore_emails(request: TrashRequest):
         raise HTTPException(502, str(exc)) from exc
 
 
+@app.get("/api/emails/restore-available")
+def restore_available(folder: str = Query(...)):
+    try:
+        return mailbox().restore_available(folder)
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
+class RestoreFolderRequest(BaseModel):
+    folder: str
+
+
+@app.post("/api/emails/restore-folder")
+def restore_folder(request: RestoreFolderRequest):
+    try:
+        return mailbox().restore_to_folder(request.folder)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(502, str(exc)) from exc
+
+
 @app.get("/api/emails/{uid}")
 def email_detail(uid: str, folder: str | None = Query(None)):
     result = mailbox().get_message(uid, folder=folder)
