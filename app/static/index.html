@@ -77,7 +77,31 @@ function loadWidths(){try{const saved=JSON.parse(localStorage.getItem('email-rea
 function saveWidths(){localStorage.setItem('email-reader-column-widths',JSON.stringify(widths))}
 function applyWidths(){resizeKeys.forEach(k=>document.documentElement.style.setProperty('--col-'+k,widths[k]+'px'))}
 applyWidths();
-async function loadFolders(){try{const r=await fetch('/api/folders');if(!r.ok)throw Error();const items=await r.json();if(!items.some(f=>f.name===selectedFolder)){selectedFolder=items.some(f=>f.name==='INBOX')?'INBOX':(items[0]?.name||'INBOX');saveSelectedFolder(selectedFolder)}folders.innerHTML=items.length?items.map((f,i)=>`<button class="folder ${f.name===selectedFolder?'active':''}" data-folder-index="${i}" title="${esc(f.name)}"><span class="folder-name">${esc(f.name)}</span></button>`).join(''):'<div class="muted">No folders.</div>';folders.querySelectorAll('.folder').forEach((button,i)=>button.addEventListener('click',()=>selectFolder(items[i].name)));await load(emailUrl());}catch(e){folders.innerHTML='<div class="muted">Could not load folders.</div>'}}
+async function loadFolders(){
+  // Show the mailbox list as soon as LIST finishes; header loading is independent.
+  // Do not make an IMAP LIST round trip a prerequisite for loading email headers.
+  const headers=load(emailUrl());
+  try{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),20000);
+    let items;
+    try{
+      const r=await fetch('/api/folders',{signal:controller.signal});
+      if(!r.ok)throw Error('Folder request failed');
+      items=await r.json();
+    }finally{clearTimeout(timeout)}
+    if(!items.some(f=>f.name===selectedFolder)){
+      selectedFolder=items.some(f=>f.name==='INBOX')?'INBOX':(items[0]?.name||'INBOX');
+      saveSelectedFolder(selectedFolder);
+      await load(emailUrl());
+    }
+    folders.innerHTML=items.length?items.map((f,i)=>`<button class="folder ${f.name===selectedFolder?'active':''}" data-folder-index="${i}" title="${esc(f.name)}"><span class="folder-name">${esc(f.name)}</span></button>`).join(''):'<div class="muted">No folders.</div>';
+    folders.querySelectorAll('.folder').forEach((button,i)=>button.addEventListener('click',()=>selectFolder(items[i].name)));
+  }catch(e){
+    folders.innerHTML='<div class="muted">Folder listing timed out or failed. Email headers can still load; refresh to retry.</div>';
+  }
+  await headers;
+}
 async function selectFolder(name){summaryVersion++;summaryVisible=false;bodyCache.clear();collapsedPanels.clear();selectedFolder=name;saveSelectedFolder(name);sortKey='involved';sortDirection='asc';selectedUids.clear();updateSortIndicators();document.querySelectorAll('.folder').forEach(b=>b.classList.toggle('active',b.title===name));search.value='';content.innerHTML='<span class="muted">Select an email.</span>';await load(emailUrl())}
 async function load(url='/api/emails'){summaryVersion++;summaryVisible=false;collapsedPanels.clear();list.textContent='Loading…';try{const r=await fetch(url);if(!r.ok)throw Error();currentItems=await r.json();if(selectedFolder!=='INBOX')selectedUids=new Set(currentItems.map(e=>e.uid));else selectedUids.clear();renderList();}catch(e){list.innerHTML='<div class="muted">Could not connect to mailbox.</div>'}}
 function attachmentCount(e){return e.attachment_count??e.attachments?.length??0}
