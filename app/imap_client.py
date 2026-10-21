@@ -321,10 +321,11 @@ class Mailbox:
         return found
 
     def _trash_mailbox(self, client):
+        """Resolve the actual Trash mailbox, including localized folder names."""
         status, entries = client.list()
         if status != "OK":
             raise RuntimeError("Could not list IMAP folders")
-        fallback = None
+        candidates = []
         for entry in entries or []:
             if not entry:
                 continue
@@ -334,13 +335,29 @@ class Mailbox:
                 continue
             flags, raw_name = match.groups()
             name = _decode_mailbox_name(raw_name.strip('"'))
-            if "\\Trash" in flags.split():
+            candidates.append((raw_name, name, flags.split()))
+        configured = os.getenv("IMAP_TRASH_FOLDER", "").strip()
+        if configured:
+            for raw_name, name, _ in candidates:
+                if name.casefold() == configured.casefold():
+                    return raw_name, name
+            raise ValueError("Configured IMAP_TRASH_FOLDER not found: " + configured)
+        # A server-declared \Trash mailbox is authoritative. In its absence,
+        # prefer a localized exact folder name, not an unrelated nested folder.
+        for raw_name, name, flags in candidates:
+            if "\\Trash" in flags:
                 return raw_name, name
-            if name.casefold().split("/")[-1] in ("trash", "deleted items", "deleted messages", "papierkorb"):
-                fallback = (raw_name, name)
-        if fallback:
-            return fallback
-        raise ValueError("No Trash folder found")
+        names = ("gelöscht", "gelöschte elemente", "gelöschte objekte",
+                 "trash", "deleted items", "deleted messages", "papierkorb")
+        for preferred in names:
+            for raw_name, name, _ in candidates:
+                if name.casefold() == preferred:
+                    return raw_name, name
+        for preferred in names:
+            for raw_name, name, _ in candidates:
+                if name.casefold().split("/")[-1] == preferred:
+                    return raw_name, name
+        raise ValueError("No Trash folder found; set IMAP_TRASH_FOLDER in .env")
 
     def _tracked_trash_messages(self, folder):
         with self._restore_db() as db:
