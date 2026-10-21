@@ -7,6 +7,8 @@ from email.message import Message
 from email.utils import parsedate_to_datetime
 from html import unescape
 import os
+import logging
+import time
 from bs4 import BeautifulSoup, NavigableString
 
 
@@ -131,6 +133,16 @@ def _attachment_count_from_bodystructure(bodystructure: bytes) -> int:
     return len(re.findall(rb'\("ATTACHMENT"(?:\s|\))', bodystructure, re.IGNORECASE))
 
 
+logger = logging.getLogger('email_reader.imap')
+
+
+def _debug(task, started=None, **fields):
+    if logger.isEnabledFor(logging.DEBUG):
+        duration = f' duration_ms={int((time.monotonic()-started)*1000)}' if started is not None else ''
+        details = ' '.join(f'{key}={value}' for key, value in fields.items())
+        logger.debug('%s%s %s', task, duration, details)
+
+
 class Mailbox:
     def __init__(self):
         self.host = os.environ["IMAP_HOST"]
@@ -141,24 +153,37 @@ class Mailbox:
         self.timeout = int(os.getenv("IMAP_TIMEOUT", "15"))
 
     def _connect(self, folder=None):
+        started = time.monotonic()
+        _debug('IMAP connect start', host=self.host, port=self.port)
         client = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
+        _debug('IMAP TLS connected', started)
         client.login(self.username, self.password)
+        _debug('IMAP authenticated', started)
         selected = folder or self.folder
         status, _ = client.select(selected, readonly=True)
+        _debug('IMAP folder selected', started, folder=selected)
         if status != "OK":
             client.logout()
             raise RuntimeError(f"Could not select mailbox: {selected}")
         return client
 
     def _connect_unselected(self):
+        started = time.monotonic()
+        _debug('IMAP connect start', host=self.host, port=self.port)
         client = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
+        _debug('IMAP TLS connected', started)
         client.login(self.username, self.password)
+        _debug('IMAP authenticated', started)
         return client
 
     def list_folders(self):
+        started = time.monotonic()
+        _debug('Folder listing start')
         client = self._connect_unselected()
         try:
+            _debug('IMAP LIST start')
             status, data = client.list()
+            _debug('IMAP LIST completed', started, entries=len(data or []))
             if status != "OK":
                 raise RuntimeError("Could not list mailboxes")
             folders = []
@@ -175,6 +200,7 @@ class Mailbox:
                     folders.append({"name": _decode_mailbox_name(raw_name), "flags": flags, "delimiter": delimiter})
                 except ValueError:
                     folders.append({"name": _decode_mailbox_name(line), "flags": [], "delimiter": "/"})
+            _debug('Folder listing completed', started, count=len(folders))
             return folders
         finally:
             client.logout()
@@ -226,10 +252,14 @@ class Mailbox:
         return result
 
     def list_messages(self, limit=25, search=None, folder=None):
+        started = time.monotonic()
+        _debug('Header listing start', folder=folder or self.folder, limit=limit, search=bool(search))
         client = self._connect(folder)
         try:
             criteria = f'(TEXT "{search.replace(chr(34), "")}")' if search else "ALL"
+            _debug('IMAP UID SEARCH start')
             status, data = client.uid("search", None, criteria)
+            _debug('IMAP UID SEARCH completed', started)
             if status != "OK":
                 return []
             uids = data[0].split()[-limit:][::-1]
@@ -238,10 +268,12 @@ class Mailbox:
             messages_by_uid = {}
             for offset in range(0, len(uids), 50):
                 batch = uids[offset:offset + 50]
+                _debug('IMAP UID FETCH batch start', count=len(batch))
                 status, fetched = client.uid(
                     "fetch", b",".join(batch).decode("ascii"),
                     "(UID BODY.PEEK[HEADER.FIELDS (DATE FROM TO CC SUBJECT MESSAGE-ID)] RFC822.SIZE BODYSTRUCTURE)",
                 )
+                _debug('IMAP UID FETCH batch completed', started, count=len(batch))
                 if status != "OK":
                     raise RuntimeError("Could not fetch email headers")
                 for item in fetched:
@@ -258,6 +290,7 @@ class Mailbox:
                     message["attachment_count"] = _attachment_count_from_bodystructure(metadata)
                     messages_by_uid[uid] = message
             messages = [messages_by_uid[uid] for uid in uids if uid in messages_by_uid]
+            _debug('Header listing completed', started, count=len(messages))
             return messages
         finally:
             client.logout()
